@@ -15,6 +15,13 @@ import (
 // Option instances allow to configure the library.
 type Option func(h *opt) error
 
+type JwtMode string
+
+const (
+	Single JwtMode = "single"
+	Jwk            = "jwk"
+)
+
 // WithAnonymous allows subscribers with no valid JWT.
 func WithAnonymous() Option {
 	return func(o *opt) error {
@@ -111,7 +118,7 @@ func WithPublisherJWT(key []byte, alg string) Option {
 			return ErrUnexpectedSigningMethod
 		}
 
-		o.publisherJWT = &jwtConfig{key, sm}
+		o.publisherJWT = &jwtConfig{&jwtKey{key, sm}, nil, Single}
 
 		return nil
 	}
@@ -128,7 +135,7 @@ func WithSubscriberJWT(key []byte, alg string) Option {
 			return ErrUnexpectedSigningMethod
 		}
 
-		o.subscriberJWT = &jwtConfig{key, sm}
+		o.subscriberJWT = &jwtConfig{&jwtKey{key, sm}, nil, Single}
 
 		return nil
 	}
@@ -179,9 +186,19 @@ func WithTopicSelectorStore(tss *TopicSelectorStore) Option {
 	}
 }
 
-type jwtConfig struct {
+type jwtKey struct {
 	key           []byte
 	signingMethod jwt.SigningMethod
+}
+
+type jwkConfig struct {
+	keyUri []byte
+}
+
+type jwtConfig struct {
+	singleKeyConfig *jwtKey
+	jwkConfig       *jwkConfig
+	mode            JwtMode
 }
 
 // opt contains the available options.
@@ -204,6 +221,7 @@ type opt struct {
 	allowedHosts       []string
 	publishOrigins     []string
 	corsOrigins        []string
+	//TODO HERE
 }
 
 // Hub stores channels with clients currently subscribed and allows to dispatch updates.

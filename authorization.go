@@ -3,10 +3,9 @@ package mercure
 import (
 	"errors"
 	"fmt"
+	"github.com/form3tech-oss/jwt-go"
 	"net/http"
 	"net/url"
-
-	"github.com/form3tech-oss/jwt-go"
 )
 
 // claims contains Mercure's JWT claims.
@@ -42,19 +41,43 @@ var (
 	// ErrInvalidJWT is returned when the JWT is invalid.
 	ErrInvalidJWT = errors.New("invalid JWT")
 	// ErrPublicKey is returned when there is an error with the public key.
-	ErrPublicKey = errors.New("public key error")
+	ErrPublicKey           = errors.New("public key error")
+	ErrInvalidMode         = errors.New("invalid jwt mode")
+	ErrMissingSingleConfig = errors.New("missing single mode configuration")
 )
+
+func getJwtKey(jwtConfig *jwtConfig) (*jwtKey, error) {
+	switch jwtConfig.mode {
+	case Single:
+		if jwtConfig.singleKeyConfig == nil {
+			return nil, ErrMissingSingleConfig
+		}
+		return jwtConfig.singleKeyConfig, nil
+	case Jwk:
+		return nil, ErrInvalidMode
+	default:
+		return nil, ErrInvalidMode
+	}
+}
 
 // Authorize validates the JWT that may be provided through an "Authorization" HTTP header or a "mercureAuthorization" cookie.
 // It returns the claims contained in the token if it exists and is valid, nil if no token is provided (anonymous mode), and an error if the token is not valid.
 func authorize(r *http.Request, jwtConfig *jwtConfig, publishOrigins []string) (*claims, error) {
 	authorizationHeaders, headerExists := r.Header["Authorization"]
+
+	jwtKeyConfig, err := getJwtKey(jwtConfig)
+
+	if err != nil {
+		// Anonymous
+		return nil, nil
+	}
+
 	if headerExists {
 		if len(authorizationHeaders) != 1 || len(authorizationHeaders[0]) < 48 || authorizationHeaders[0][:7] != "Bearer " {
 			return nil, ErrInvalidAuthorizationHeader
 		}
 
-		return validateJWT(authorizationHeaders[0][7:], jwtConfig)
+		return validateJWT(authorizationHeaders[0][7:], jwtKeyConfig)
 	}
 
 	cookie, err := r.Cookie("mercureAuthorization")
@@ -65,7 +88,7 @@ func authorize(r *http.Request, jwtConfig *jwtConfig, publishOrigins []string) (
 
 	// CSRF attacks cannot occur when using safe methods
 	if r.Method != "POST" {
-		return validateJWT(cookie.Value, jwtConfig)
+		return validateJWT(cookie.Value, jwtKeyConfig)
 	}
 
 	origin := r.Header.Get("Origin")
@@ -86,7 +109,7 @@ func authorize(r *http.Request, jwtConfig *jwtConfig, publishOrigins []string) (
 
 	for _, allowedOrigin := range publishOrigins {
 		if allowedOrigin == "*" || origin == allowedOrigin {
-			return validateJWT(cookie.Value, jwtConfig)
+			return validateJWT(cookie.Value, jwtKeyConfig)
 		}
 	}
 
@@ -94,13 +117,13 @@ func authorize(r *http.Request, jwtConfig *jwtConfig, publishOrigins []string) (
 }
 
 // validateJWT validates that the provided JWT token is a valid Mercure token.
-func validateJWT(encodedToken string, jwtConfig *jwtConfig) (*claims, error) {
+func validateJWT(encodedToken string, jwtKey *jwtKey) (*claims, error) {
 	token, err := jwt.ParseWithClaims(encodedToken, &claims{}, func(token *jwt.Token) (interface{}, error) {
-		switch jwtConfig.signingMethod.(type) {
+		switch jwtKey.signingMethod.(type) {
 		case *jwt.SigningMethodHMAC:
-			return jwtConfig.key, nil
+			return jwtKey.key, nil
 		case *jwt.SigningMethodRSA:
-			pub, err := jwt.ParseRSAPublicKeyFromPEM(jwtConfig.key)
+			pub, err := jwt.ParseRSAPublicKeyFromPEM(jwtKey.key)
 			if err != nil {
 				return nil, fmt.Errorf("unable to parse RSA public key: %w", err)
 			}
@@ -108,7 +131,7 @@ func validateJWT(encodedToken string, jwtConfig *jwtConfig) (*claims, error) {
 			return pub, nil
 		}
 
-		return nil, fmt.Errorf("%T: %w", jwtConfig.signingMethod, ErrUnexpectedSigningMethod)
+		return nil, fmt.Errorf("%T: %w", jwtKey.signingMethod, ErrUnexpectedSigningMethod)
 	})
 	if err != nil {
 		return nil, fmt.Errorf("unable to parse JWT: %w", err)

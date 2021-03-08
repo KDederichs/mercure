@@ -4,10 +4,11 @@ package mercure
 
 import (
 	"fmt"
+	"github.com/lestrrat-go/jwx/jwa"
+	"github.com/lestrrat-go/jwx/jwt"
 	"net/http"
 	"time"
 
-	"github.com/form3tech-oss/jwt-go"
 	"github.com/spf13/viper"
 	"go.uber.org/zap"
 )
@@ -110,15 +111,13 @@ func WithHeartbeat(interval time.Duration) Option {
 // WithPublisherJWT sets the JWT key and the signing algorithm to use for publishers.
 func WithPublisherJWT(key []byte, alg string) Option {
 	return func(o *opt) error {
-		sm := jwt.GetSigningMethod(alg)
-		switch sm.(type) {
-		case *jwt.SigningMethodHMAC:
-		case *jwt.SigningMethodRSA:
-		default:
+		var sigAlg jwa.SignatureAlgorithm
+		err := sigAlg.Accept(alg)
+		if err != nil {
 			return ErrUnexpectedSigningMethod
 		}
 
-		o.publisherJWT = &jwtConfig{&jwtKey{key, sm}, nil, Single}
+		o.publisherJWT = &jwtConfig{&jwtKey{key, sigAlg}, nil, Single}
 
 		return nil
 	}
@@ -127,15 +126,13 @@ func WithPublisherJWT(key []byte, alg string) Option {
 // WithSubscriberJWT sets the JWT key and the signing algorithm to use for subscribers.
 func WithSubscriberJWT(key []byte, alg string) Option {
 	return func(o *opt) error {
-		sm := jwt.GetSigningMethod(alg)
-		switch sm.(type) {
-		case *jwt.SigningMethodHMAC:
-		case *jwt.SigningMethodRSA:
-		default:
+		var sigAlg jwa.SignatureAlgorithm
+		err := sigAlg.Accept(alg)
+		if err != nil {
 			return ErrUnexpectedSigningMethod
 		}
 
-		o.subscriberJWT = &jwtConfig{&jwtKey{key, sm}, nil, Single}
+		o.subscriberJWT = &jwtConfig{&jwtKey{key, sigAlg}, nil, Single}
 
 		return nil
 	}
@@ -188,7 +185,7 @@ func WithTopicSelectorStore(tss *TopicSelectorStore) Option {
 
 type jwtKey struct {
 	key           []byte
-	signingMethod jwt.SigningMethod
+	signingMethod jwa.SignatureAlgorithm
 }
 
 type jwkConfig struct {
@@ -238,7 +235,7 @@ type Hub struct {
 // NewHub creates a new Hub instance.
 func NewHub(options ...Option) (*Hub, error) {
 	opt := &opt{writeTimeout: 600 * time.Second}
-
+	jwt.RegisterCustomField("mercure", mercureClaim{})
 	for _, o := range options {
 		if err := o(opt); err != nil {
 			return nil, err

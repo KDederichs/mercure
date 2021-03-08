@@ -6,7 +6,8 @@ import (
 	"os/exec"
 	"testing"
 
-	"github.com/form3tech-oss/jwt-go"
+	"github.com/lestrrat-go/jwx/jwa"
+	"github.com/lestrrat-go/jwx/jwt"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -26,8 +27,8 @@ func TestNewHub(t *testing.T) {
 
 func TestNewHubWithConfig(t *testing.T) {
 	h, err := NewHub(
-		WithPublisherJWT([]byte("foo"), jwt.SigningMethodHS256.Name),
-		WithSubscriberJWT([]byte("bar"), jwt.SigningMethodHS256.Name),
+		WithPublisherJWT([]byte("foo"), jwa.HS256.String()),
+		WithSubscriberJWT([]byte("bar"), jwa.HS256.String()),
 	)
 	require.NotNil(t, h)
 	require.Nil(t, err)
@@ -69,8 +70,8 @@ func createDummy(options ...Option) *Hub {
 	tss, _ := NewTopicSelectorStore(0, 0)
 	options = append(
 		[]Option{
-			WithPublisherJWT([]byte("publisher"), jwt.SigningMethodHS256.Name),
-			WithSubscriberJWT([]byte("subscriber"), jwt.SigningMethodHS256.Name),
+			WithPublisherJWT([]byte("publisher"), jwa.HS256.String()),
+			WithSubscriberJWT([]byte("subscriber"), jwa.HS256.String()),
 			WithLogger(zap.NewNop()),
 			WithTopicSelectorStore(tss),
 		},
@@ -95,47 +96,39 @@ func createAnonymousDummy(options ...Option) *Hub {
 }
 
 func createDummyAuthorizedJWT(h *Hub, r role, topics []string) string {
-	token := jwt.New(jwt.SigningMethodHS256)
+	token := jwt.New()
 
-	var key []byte
+	var keyConfig *jwtKey
 	switch r {
 	case rolePublisher:
-		token.Claims = &claims{Mercure: mercureClaim{Publish: topics}, StandardClaims: jwt.StandardClaims{}}
-		key = h.publisherJWT.key
+		token.Set("mercure", mercureClaim{Publish: topics})
+		keyConfig = h.publisherJWT.singleKeyConfig
 
 	case roleSubscriber:
 		var payload struct {
 			Foo string `json:"foo"`
 		}
 		payload.Foo = "bar"
-		token.Claims = &claims{
-			Mercure: mercureClaim{
-				Subscribe: topics,
-				Payload:   payload,
-			},
-			StandardClaims: jwt.StandardClaims{},
-		}
+		token.Set("mercure", mercureClaim{
+			Subscribe: topics,
+			Payload:   payload,
+		})
 
-		key = h.subscriberJWT.key
+		keyConfig = h.subscriberJWT.singleKeyConfig
 	}
 
-	tokenString, _ := token.SignedString(key)
+	tokenString, _ := jwt.Sign(token, keyConfig.signingMethod, keyConfig.key)
 
-	return tokenString
+	return string(tokenString)
 }
 
 func createDummyUnauthorizedJWT() string {
-	token := jwt.New(jwt.SigningMethodHS256)
-	tokenString, _ := token.SignedString([]byte("unauthorized"))
+	token := jwt.New()
+	tokenString, _ := jwt.Sign(token, jwa.HS256, []byte("unauthorized"))
 
-	return tokenString
+	return string(tokenString)
 }
 
 func createDummyNoneSignedJWT() string {
-	token := jwt.New(jwt.SigningMethodNone)
-	// The generated token must have more than 41 chars
-	token.Claims = jwt.StandardClaims{Subject: "me"}
-	tokenString, _ := token.SignedString(jwt.UnsafeAllowNoneSignatureType)
-
-	return tokenString
+	return "eyJ0eXAiOiJKV1QiLCJhbGciOiJub25lIn0.eyJpZCI6MSwiaWF0IjoxNTczMzU4Mzk2fQ."
 }

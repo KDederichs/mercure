@@ -156,7 +156,7 @@ func TestPublishOK(t *testing.T) {
 
 	s := NewSubscriber("", zap.NewNop(), &TopicSelectorStore{})
 	s.Topics = []string{"http://example.com/books/1"}
-	s.Claims = &claims{Mercure: mercureClaim{Subscribe: s.Topics}}
+	s.Claims = &mercureClaim{Subscribe: s.Topics}
 	go s.start()
 
 	require.Nil(t, hub.transport.AddSubscriber(s))

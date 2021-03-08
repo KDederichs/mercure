@@ -81,7 +81,7 @@ func (h *Hub) registerSubscriber(w http.ResponseWriter, r *http.Request) *Subscr
 		claims, err := authorize(r, h.subscriberJWT, nil)
 		if claims != nil {
 			s.Claims = claims
-			s.TopicSelectors = claims.Mercure.Subscribe
+			s.TopicSelectors = claims.Subscribe
 		}
 		if err != nil || (claims == nil && !h.anonymous) {
 			http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)

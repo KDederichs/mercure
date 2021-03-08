@@ -18,7 +18,7 @@ type updateSource struct {
 type Subscriber struct {
 	ID                 string
 	EscapedID          string
-	Claims             *claims
+	Claims             *mercureClaim
 	Topics             []string
 	EscapedTopics      []string
 	RequestLastEventID string
@@ -179,7 +179,7 @@ func (s *Subscriber) CanDispatch(u *Update) bool {
 		return false
 	}
 
-	if u.Private && (s.Claims == nil || s.Claims.Mercure.Subscribe == nil || !canReceive(s.topicSelectorStore, u.Topics, s.Claims.Mercure.Subscribe)) {
+	if u.Private && (s.Claims == nil || s.Claims.Subscribe == nil || !canReceive(s.topicSelectorStore, u.Topics, s.Claims.Subscribe)) {
 		s.logger.Debug("Subscriber not authorized to receive this update", zap.Object("subscriber", s), zap.Object("update", u))
 
 		return false
@@ -206,8 +206,8 @@ func (s *Subscriber) getSubscriptions(topic, context string, active bool) []subs
 			Active:     active,
 		}
 
-		if s.Claims != nil && s.Claims.Mercure.Payload != nil {
-			subscription.Payload = s.Claims.Mercure.Payload
+		if s.Claims != nil && s.Claims.Payload != nil {
+			subscription.Payload = s.Claims.Payload
 		}
 
 		subscriptions = append(subscriptions, subscription)
